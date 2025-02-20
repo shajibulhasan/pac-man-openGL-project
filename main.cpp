@@ -17,23 +17,50 @@ bool gameOver = false;
 
 struct Food {
     float x, y;
+    bool isCircle;
 };
 
 struct Ghost {
     float x, y;
 };
 
+struct Star {
+    float x, y;
+};
+
 std::vector<Food> foods;
+std::vector<Star> stars;
 Ghost ghost = {0.5f, 0.5f};
 float ghostSpeed = 0.01f;
 
+void addFood() {
+    Food food;
+    food.x = (rand() % 200 - 100) / 100.0f;
+    food.y = (rand() % 200 - 100) / 100.0f;
+    food.isCircle = rand() % 2;
+    foods.push_back(food);
+}
+
 void generateFood(int num) {
+    foods.clear();
     srand(time(0));
     for (int i = 0; i < num; i++) {
-        Food food;
-        food.x = (rand() % 200 - 100) / 100.0f;
-        food.y = (rand() % 200 - 100) / 100.0f;
-        foods.push_back(food);
+        addFood();
+    }
+}
+
+void addStar() {
+    Star star;
+    star.x = (rand() % 200 - 100) / 100.0f;
+    star.y = (rand() % 200 - 100) / 100.0f;
+    stars.push_back(star);
+}
+
+void generateStars(int num) {
+    stars.clear();
+    srand(time(0));
+    for (int i = 0; i < num; i++) {
+        addStar();
     }
 }
 
@@ -53,13 +80,39 @@ void drawPacman() {
 }
 
 void drawFood() {
-    glColor3f(1.0f, 0.0f, 0.0f);
-    glPointSize(5.0f);
-    glBegin(GL_POINTS);
     for (const auto& food : foods) {
-        glVertex2f(food.x, food.y);
+        if (food.isCircle) {
+            glColor3f(1.0f, 0.0f, 0.0f);
+            glBegin(GL_TRIANGLE_FAN);
+            glVertex2f(food.x, food.y);
+            for (int i = 0; i <= 360; i += 10) {
+                float angle = i * 3.14159 / 180;
+                glVertex2f(food.x + cos(angle) * 0.05, food.y + sin(angle) * 0.05);
+            }
+            glEnd();
+        } else {
+            glColor3f(0.0f, 1.0f, 0.0f);
+            glBegin(GL_QUADS);
+            glVertex2f(food.x - 0.05, food.y - 0.05);
+            glVertex2f(food.x + 0.05, food.y - 0.05);
+            glVertex2f(food.x + 0.05, food.y + 0.05);
+            glVertex2f(food.x - 0.05, food.y + 0.05);
+            glEnd();
+        }
     }
-    glEnd();
+}
+
+void drawStars() {
+    glColor3f(1.0f, 1.0f, 1.0f);
+    for (const auto& star : stars) {
+        glBegin(GL_TRIANGLE_FAN);
+        glVertex2f(star.x, star.y);
+        for (int i = 0; i <= 360; i += 72) {
+            float angle = i * 3.14159 / 180;
+            glVertex2f(star.x + cos(angle) * 0.07, star.y + sin(angle) * 0.07);
+        }
+        glEnd();
+    }
 }
 
 void drawGhost() {
@@ -86,6 +139,8 @@ void moveGhost() {
     if (length < pacmanRadius) {
         gameOver = true;
     }
+    pacmanX = std::max(-1.0f + pacmanRadius, std::min(1.0f - pacmanRadius, pacmanX));
+    pacmanY = std::max(-1.0f + pacmanRadius, std::min(1.0f - pacmanRadius, pacmanY));
 }
 
 void drawScore() {
@@ -104,16 +159,37 @@ void drawScore() {
     }
 }
 
+
+bool checkStarCollision() {
+    for (const auto& star : stars) {
+        float distX = pacmanX - star.x;
+        float distY = pacmanY - star.y;
+        float distance = sqrt(distX * distX + distY * distY);
+        if (distance < pacmanRadius) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void checkCollision() {
+    // ⭐ Check if Pac-Man touched any Star
+    if (checkStarCollision()) {
+        gameOver = true;
+        return;
+    }
+
+    // 🍎 Check if Pac-Man ate any Food
     for (auto it = foods.begin(); it != foods.end();) {
         float distX = pacmanX - it->x;
         float distY = pacmanY - it->y;
         float distance = sqrt(distX * distX + distY * distY);
+
         if (distance < pacmanRadius) {
             PlaySound(TEXT("eat.wav"), NULL, SND_FILENAME | SND_ASYNC);
-            it = foods.erase(it);
-            score += 10;
-            foods.push_back({(rand() % 200 - 100) / 100.0f, (rand() % 200 - 100) / 100.0f});
+            score += (it->isCircle ? 10 : 5);
+            it = foods.erase(it);  // Remove eaten food
+            addFood();  // Add new food
         } else {
             ++it;
         }
@@ -125,12 +201,23 @@ void display() {
     drawPacman();
     drawFood();
     drawGhost();
+    drawStars();
     drawScore();
     glutSwapBuffers();
 }
 
 void update(int value) {
     if (!gameOver) {
+        // Increase ghost speed if score > 50
+        if (score > 100) {
+            ghostSpeed = 0.03f; // Faster speed
+        }else if(score > 50) {
+            ghostSpeed = 0.02f;
+        }
+        else {
+            ghostSpeed = 0.01f; // Normal speed
+        }
+
         moveGhost();
         glutPostRedisplay();
         glutTimerFunc(100, update, 0);
@@ -140,10 +227,10 @@ void update(int value) {
 void keyboard(int key, int x, int y) {
     if (!gameOver) {
         float speed = 0.05f;
-        if (key == GLUT_KEY_LEFT && pacmanX - speed > -1) pacmanX -= speed;
-        if (key == GLUT_KEY_RIGHT && pacmanX + speed < 1) pacmanX += speed;
-        if (key == GLUT_KEY_UP && pacmanY + speed < 1) pacmanY += speed;
-        if (key == GLUT_KEY_DOWN && pacmanY - speed > -1) pacmanY -= speed;
+        if (key == GLUT_KEY_LEFT) pacmanX -= speed;
+        if (key == GLUT_KEY_RIGHT) pacmanX += speed;
+        if (key == GLUT_KEY_UP) pacmanY += speed;
+        if (key == GLUT_KEY_DOWN) pacmanY -= speed;
 
         mouthOpen = !mouthOpen;
 
@@ -157,6 +244,7 @@ void init() {
     glMatrixMode(GL_PROJECTION);
     gluOrtho2D(-1, 1, -1, 1);
     generateFood(5);
+    generateStars(5);
 }
 
 int main(int argc, char** argv) {
